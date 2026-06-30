@@ -37,7 +37,9 @@
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="b" Background="{TemplateBinding Background}"
-                            CornerRadius="14" Padding="18,10">
+                            CornerRadius="14" Padding="18,10"
+                            RenderTransformOrigin="0.5,0.5">
+                        <!-- ScaleTransform объявлен ДО триггеров, имя 'st' видно из них -->
                         <Border.RenderTransform>
                             <ScaleTransform x:Name="st" ScaleX="1" ScaleY="1"/>
                         </Border.RenderTransform>
@@ -54,34 +56,52 @@
                                 </Storyboard>
                             </BeginStoryboard>
                         </EventTrigger>
-                        <!-- Наведение -->
-                        <Trigger Property="IsMouseOver" Value="True">
-                            <Trigger.EnterActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <DoubleAnimation Storyboard.TargetName="st"
-                                            Storyboard.TargetProperty="ScaleX" To="1.04" Duration="0:0:0.15"/>
-                                        <DoubleAnimation Storyboard.TargetName="st"
-                                            Storyboard.TargetProperty="ScaleY" To="1.04" Duration="0:0:0.15"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.EnterActions>
-                            <Trigger.ExitActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <DoubleAnimation Storyboard.TargetName="st"
-                                            Storyboard.TargetProperty="ScaleX" To="1" Duration="0:0:0.15"/>
-                                        <DoubleAnimation Storyboard.TargetName="st"
-                                            Storyboard.TargetProperty="ScaleY" To="1" Duration="0:0:0.15"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.ExitActions>
-                        </Trigger>
-                        <!-- Нажатие -->
-                        <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="st" Property="ScaleX" Value="0.96"/>
-                            <Setter TargetName="st" Property="ScaleY" Value="0.96"/>
-                        </Trigger>
+
+                        <!-- Наведение: увеличение -->
+                        <EventTrigger RoutedEvent="MouseEnter">
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetName="st"
+                                        Storyboard.TargetProperty="ScaleX" To="1.04" Duration="0:0:0.15"/>
+                                    <DoubleAnimation Storyboard.TargetName="st"
+                                        Storyboard.TargetProperty="ScaleY" To="1.04" Duration="0:0:0.15"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                        <!-- Уход курсора: возврат -->
+                        <EventTrigger RoutedEvent="MouseLeave">
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetName="st"
+                                        Storyboard.TargetProperty="ScaleX" To="1" Duration="0:0:0.15"/>
+                                    <DoubleAnimation Storyboard.TargetName="st"
+                                        Storyboard.TargetProperty="ScaleY" To="1" Duration="0:0:0.15"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+
+                        <!-- Нажатие: лёгкое сжатие -->
+                        <EventTrigger RoutedEvent="PreviewMouseLeftButtonDown">
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetName="st"
+                                        Storyboard.TargetProperty="ScaleX" To="0.96" Duration="0:0:0.08"/>
+                                    <DoubleAnimation Storyboard.TargetName="st"
+                                        Storyboard.TargetProperty="ScaleY" To="0.96" Duration="0:0:0.08"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                        <!-- Отпускание: возврат к hover-размеру -->
+                        <EventTrigger RoutedEvent="PreviewMouseLeftButtonUp">
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetName="st"
+                                        Storyboard.TargetProperty="ScaleX" To="1.04" Duration="0:0:0.12"/>
+                                    <DoubleAnimation Storyboard.TargetName="st"
+                                        Storyboard.TargetProperty="ScaleY" To="1.04" Duration="0:0:0.12"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
