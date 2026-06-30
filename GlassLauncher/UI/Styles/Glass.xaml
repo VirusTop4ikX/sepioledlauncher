@@ -33,81 +33,82 @@
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
         <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
+        <!-- Трансформацию вешаем на сам Button — её видно из Storyboard без TargetName -->
+        <Setter Property="RenderTransform">
+            <Setter.Value>
+                <ScaleTransform ScaleX="1" ScaleY="1"/>
+            </Setter.Value>
+        </Setter>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="b" Background="{TemplateBinding Background}"
-                            CornerRadius="14" Padding="18,10"
-                            RenderTransformOrigin="0.5,0.5">
-                        <!-- ScaleTransform объявлен ДО триггеров, имя 'st' видно из них -->
-                        <Border.RenderTransform>
-                            <ScaleTransform x:Name="st" ScaleX="1" ScaleY="1"/>
-                        </Border.RenderTransform>
+                    <Border Background="{TemplateBinding Background}"
+                            CornerRadius="14" Padding="18,10">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
-                    <ControlTemplate.Triggers>
-                        <!-- Появление -->
-                        <EventTrigger RoutedEvent="Loaded">
-                            <BeginStoryboard>
-                                <Storyboard>
-                                    <DoubleAnimation Storyboard.TargetName="b"
-                                        Storyboard.TargetProperty="Opacity"
-                                        From="0" To="1" Duration="0:0:0.35"/>
-                                </Storyboard>
-                            </BeginStoryboard>
-                        </EventTrigger>
-
-                        <!-- Наведение: увеличение -->
-                        <EventTrigger RoutedEvent="MouseEnter">
-                            <BeginStoryboard>
-                                <Storyboard>
-                                    <DoubleAnimation Storyboard.TargetName="st"
-                                        Storyboard.TargetProperty="ScaleX" To="1.04" Duration="0:0:0.15"/>
-                                    <DoubleAnimation Storyboard.TargetName="st"
-                                        Storyboard.TargetProperty="ScaleY" To="1.04" Duration="0:0:0.15"/>
-                                </Storyboard>
-                            </BeginStoryboard>
-                        </EventTrigger>
-                        <!-- Уход курсора: возврат -->
-                        <EventTrigger RoutedEvent="MouseLeave">
-                            <BeginStoryboard>
-                                <Storyboard>
-                                    <DoubleAnimation Storyboard.TargetName="st"
-                                        Storyboard.TargetProperty="ScaleX" To="1" Duration="0:0:0.15"/>
-                                    <DoubleAnimation Storyboard.TargetName="st"
-                                        Storyboard.TargetProperty="ScaleY" To="1" Duration="0:0:0.15"/>
-                                </Storyboard>
-                            </BeginStoryboard>
-                        </EventTrigger>
-
-                        <!-- Нажатие: лёгкое сжатие -->
-                        <EventTrigger RoutedEvent="PreviewMouseLeftButtonDown">
-                            <BeginStoryboard>
-                                <Storyboard>
-                                    <DoubleAnimation Storyboard.TargetName="st"
-                                        Storyboard.TargetProperty="ScaleX" To="0.96" Duration="0:0:0.08"/>
-                                    <DoubleAnimation Storyboard.TargetName="st"
-                                        Storyboard.TargetProperty="ScaleY" To="0.96" Duration="0:0:0.08"/>
-                                </Storyboard>
-                            </BeginStoryboard>
-                        </EventTrigger>
-                        <!-- Отпускание: возврат к hover-размеру -->
-                        <EventTrigger RoutedEvent="PreviewMouseLeftButtonUp">
-                            <BeginStoryboard>
-                                <Storyboard>
-                                    <DoubleAnimation Storyboard.TargetName="st"
-                                        Storyboard.TargetProperty="ScaleX" To="1.04" Duration="0:0:0.12"/>
-                                    <DoubleAnimation Storyboard.TargetName="st"
-                                        Storyboard.TargetProperty="ScaleY" To="1.04" Duration="0:0:0.12"/>
-                                </Storyboard>
-                            </BeginStoryboard>
-                        </EventTrigger>
-                    </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
-    </Style>
 
+        <!-- Триггеры на уровне Style: TargetName не нужен, всё применяется к самой кнопке -->
+        <Style.Triggers>
+            <!-- Появление -->
+            <EventTrigger RoutedEvent="Loaded">
+                <BeginStoryboard>
+                    <Storyboard>
+                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                        From="0" To="1" Duration="0:0:0.35"/>
+                    </Storyboard>
+                </BeginStoryboard>
+            </EventTrigger>
+
+            <!-- Наведение: увеличение -->
+            <EventTrigger RoutedEvent="MouseEnter">
+                <BeginStoryboard>
+                    <Storyboard>
+                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                        To="1.04" Duration="0:0:0.15"/>
+                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                        To="1.04" Duration="0:0:0.15"/>
+                    </Storyboard>
+                </BeginStoryboard>
+            </EventTrigger>
+            <!-- Уход курсора: возврат -->
+            <EventTrigger RoutedEvent="MouseLeave">
+                <BeginStoryboard>
+                    <Storyboard>
+                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                        To="1" Duration="0:0:0.15"/>
+                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                        To="1" Duration="0:0:0.15"/>
+                    </Storyboard>
+                </BeginStoryboard>
+            </EventTrigger>
+
+            <!-- Нажатие: лёгкое сжатие -->
+            <EventTrigger RoutedEvent="PreviewMouseLeftButtonDown">
+                <BeginStoryboard>
+                    <Storyboard>
+                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                        To="0.96" Duration="0:0:0.08"/>
+                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                        To="0.96" Duration="0:0:0.08"/>
+                    </Storyboard>
+                </BeginStoryboard>
+            </EventTrigger>
+            <!-- Отпускание: возврат к hover-размеру -->
+            <EventTrigger RoutedEvent="PreviewMouseLeftButtonUp">
+                <BeginStoryboard>
+                    <Storyboard>
+                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                        To="1.04" Duration="0:0:0.12"/>
+                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                        To="1.04" Duration="0:0:0.12"/>
+                    </Storyboard>
+                </BeginStoryboard>
+            </EventTrigger>
+        </Style.Triggers>
+    </Style>
     <!-- Большая кнопка "Играть" -->
     <Style x:Key="PlayButton" TargetType="Button" BasedOn="{StaticResource GlassButton}">
         <Setter Property="FontSize" Value="24"/>
