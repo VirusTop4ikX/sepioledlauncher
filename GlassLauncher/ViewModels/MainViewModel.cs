@@ -1,5 +1,6 @@
 using System;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
@@ -8,10 +9,10 @@ using CommunityToolkit.Mvvm.Input;
 using GlassLauncher.Core;
 using GlassLauncher.Services;
 using GlassLauncher.UI;
+using Microsoft.Win32;
 
 namespace GlassLauncher.ViewModels;
 
-// Главная модель представления: связывает UI с сервисами.
 public partial class MainViewModel : ViewModelBase
 {
     private readonly SettingsService _settings;
@@ -28,10 +29,23 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty] private string _status = "Готов к запуску";
     [ObservableProperty] private bool _includeSnapshots;
     [ObservableProperty] private string _offlineUsername = "Player";
+    [ObservableProperty] private string _selectedLoader = "Vanilla";
+    [ObservableProperty] private string _selectedContentKind = "Моды";
+
+    // Настройки запуска (привязаны к UI вкладки "Настройки")
+    [ObservableProperty] private int _ramMb;
+    [ObservableProperty] private int _screenWidth;
+    [ObservableProperty] private int _screenHeight;
+    [ObservableProperty] private string _jvmArgs = "";
+    [ObservableProperty] private string? _javaPath;
+    [ObservableProperty] private string _gameDirectory = "";
+    [ObservableProperty] private bool _minimizeOnLaunch;
 
     public ObservableCollection<string> Versions { get; } = new();
     public ObservableCollection<ModCard> Mods { get; } = new();
     public ObservableCollection<string> Themes { get; } = new() { "Dark", "Light" };
+    public ObservableCollection<string> Loaders { get; } = new() { "Vanilla", "Fabric", "Forge", "NeoForge" };
+    public ObservableCollection<string> ContentKinds { get; } = new() { "Моды", "Ресурспаки" };
 
     private ElyAccount? _account;
 
@@ -45,28 +59,32 @@ public partial class MainViewModel : ViewModelBase
         _mc.ByteProgress += (done, total) =>
             App.UiDispatch(() => { if (total > 0) Progress = (double)done / total * 100; });
 
-        try { SelectedVersion = _settings.GetActiveProfile().VersionId; }
-        catch { SelectedVersion = null; }
+        // Подтягиваем настройки из конфига
+        var c = _settings.Config;
+        RamMb = c.RamMb;
+        ScreenWidth = c.ScreenWidth;
+        ScreenHeight = c.ScreenHeight;
+        JvmArgs = c.JvmArgs;
+        JavaPath = c.JavaPath;
+        GameDirectory = c.GameDirectory;
+        MinimizeOnLaunch = c.MinimizeOnLaunch;
+
+        try { SelectedVersion = _settings.GetActiveProfile().VersionId; } catch { SelectedVersion = null; }
     }
 
-    // Старт: загрузка версий + авто-логин
     [RelayCommand]
     private async Task InitAsync()
     {
         await ReloadVersionsAsync();
 
+        // Восстановить оффлайн-скин/ник, если был
         if (!string.IsNullOrEmpty(_settings.Config.ElyRefreshToken))
         {
-            try
-            {
-                _account = await _auth.RefreshAsync(_settings.Config.ElyRefreshToken);
-                ApplyAccount(_account);
-            }
+            try { _account = await _auth.RefreshAsync(_settings.Config.ElyRefreshToken); ApplyAccount(_account); }
             catch { Status = "Сессия Ely.by истекла — войдите заново"; }
         }
     }
 
-    // Перезагрузка списка версий
     [RelayCommand]
     private async Task ReloadVersionsAsync()
     {
@@ -82,10 +100,9 @@ public partial class MainViewModel : ViewModelBase
         catch (Exception ex) { Status = $"Не удалось загрузить версии: {ex.Message}"; }
     }
 
-    // Авто-перезагрузка при смене флажка снапшотов
     partial void OnIncludeSnapshotsChanged(bool value) => _ = ReloadVersionsAsync();
 
-    // Вход через Ely.by (WebView2)
+    // ===== Вход Ely.by =====
     [RelayCommand]
     private void Login()
     {
@@ -103,27 +120,25 @@ public partial class MainViewModel : ViewModelBase
                 _settings.Save();
             }
         }
-        catch (Exception ex)
-        {
-            Status = $"Ошибка входа: {ex.Message}";
-            MessageBox.Show(ex.ToString(), "Ошибка входа Ely.by");
-        }
+        catch (Exception ex) { Status = $"Ошибка входа: {ex.Message}"; }
     }
 
-    // Вход по нику (offline)
+    // ===== Оффлайн-вход =====
     [RelayCommand]
     private void LoginOffline()
     {
         var name = (OfflineUsername ?? "").Trim();
         if (name.Length < 3) { Status = "Ник должен быть не короче 3 символов"; return; }
 
-        _account = new ElyAccount
-        {
-            Username = name,
-            AccessToken = "",
-            Uuid = "",
-            SkinUrl = $"https://mc-heads.net/avatar/{name}/96"
-        };
+        // Приоритет скина: локальный файл -> ссылка -> по нику с mc-heads
+        string skin =
+            !string.IsNullOrWhiteSpace(_settings.Config.OfflineSkinPath) && File.Exists(_settings.Config.OfflineSkinPath)
+                ? _settings.Config.OfflineSkinPath!
+            : !string.IsNullOrWhiteSpace(_settings.Config.OfflineSkinUrl)
+                ? _settings.Config.OfflineSkinUrl!
+                : $"https://mc-heads.net/avatar/{name}/96";
+
+        _account = new ElyAccount { Username = name, AccessToken = "", Uuid = "", SkinUrl = skin };
         ApplyAccount(_account);
 
         _settings.Config.Username = name;
@@ -133,6 +148,48 @@ public partial class MainViewModel : ViewModelBase
         Status = $"Оффлайн-вход: {name}";
     }
 
+    // Выбрать локальный PNG-скин
+    [RelayCommand]
+    private void PickSkinFile()
+    {
+        var dlg = new OpenFileDialog { Filter = "PNG изображения (*.png)|*.png", Title = "Выберите скин" };
+        if (dlg.ShowDialog() == true)
+        {
+            _settings.Config.OfflineSkinPath = dlg.FileName;
+            _settings.Config.OfflineSkinUrl = null;
+            _settings.Save();
+            SkinUrl = dlg.FileName;
+            Status = "Скин из файла установлен";
+        }
+    }
+
+    // Установить скин по ссылке
+    [RelayCommand]
+    private void SetSkinUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) { Status = "Введите ссылку на скин"; return; }
+        _settings.Config.OfflineSkinUrl = url.Trim();
+        _settings.Config.OfflineSkinPath = null;
+        _settings.Save();
+        SkinUrl = url.Trim();
+        Status = "Скин по ссылке установлен";
+    }
+
+    // Установить CustomSkinLoader (чтобы скин был виден в игре в offline)
+    [RelayCommand]
+    private async Task InstallSkinModAsync()
+    {
+        IsBusy = true; Progress = 0;
+        try
+        {
+            var prog = new Progress<double>(p => App.UiDispatch(() => Progress = p));
+            var path = await _mods.InstallCustomSkinLoaderAsync(prog);
+            Status = $"Установлен мод скинов: {Path.GetFileName(path)}";
+        }
+        catch (Exception ex) { Status = $"Не удалось установить мод скинов: {ex.Message}"; }
+        finally { IsBusy = false; }
+    }
+
     private void ApplyAccount(ElyAccount acc)
     {
         Username = acc.Username;
@@ -140,29 +197,41 @@ public partial class MainViewModel : ViewModelBase
         Status = $"Вы вошли как {acc.Username}";
     }
 
-    // Запуск игры
+    // ===== Запуск =====
     [RelayCommand]
     private async Task PlayAsync()
     {
         if (_account == null) { Status = "Сначала выполните вход"; return; }
         if (string.IsNullOrEmpty(SelectedVersion)) { Status = "Выберите версию"; return; }
 
+        SaveSettings(); // фиксируем настройки запуска
         IsBusy = true; Progress = 0;
         try
         {
             var profile = _settings.GetActiveProfile();
             profile.VersionId = SelectedVersion!;
+            profile.RamMb = RamMb > 0 ? RamMb : 4096;
+            profile.Loader = SelectedLoader switch
+            {
+                "Fabric" => LoaderType.Fabric,
+                "Forge" => LoaderType.Forge,
+                "NeoForge" => LoaderType.NeoForge,
+                _ => LoaderType.Vanilla
+            };
             _settings.Save();
 
             Status = "Подготовка...";
-            await _mc.LaunchAsync(profile, _account);
+            var proc = await _mc.LaunchAsync(profile, _account);
             Status = "Игра запущена!";
+
+            if (MinimizeOnLaunch && Application.Current.MainWindow != null)
+                Application.Current.MainWindow.WindowState = WindowState.Minimized;
         }
         catch (Exception ex) { Status = $"Ошибка запуска: {ex.Message}"; }
         finally { IsBusy = false; }
     }
 
-    // Поиск модов (Modrinth)
+    // ===== Моды / Ресурспаки =====
     [RelayCommand]
     private async Task SearchModsAsync(string query)
     {
@@ -170,15 +239,15 @@ public partial class MainViewModel : ViewModelBase
         try
         {
             Mods.Clear();
-            var results = await _mods.SearchModrinthAsync(query ?? "", ContentKind.Mod);
+            var kind = SelectedContentKind == "Ресурспаки" ? ContentKind.ResourcePack : ContentKind.Mod;
+            var results = await _mods.SearchModrinthAsync(query ?? "", kind);
             foreach (var m in results) Mods.Add(m);
-            Status = $"Найдено модов: {Mods.Count}";
+            Status = $"Найдено: {Mods.Count}";
         }
         catch (Exception ex) { Status = $"Ошибка поиска: {ex.Message}"; }
         finally { IsBusy = false; }
     }
 
-    // Скачать выбранный мод
     [RelayCommand]
     private async Task DownloadModAsync(ModCard? card)
     {
@@ -186,24 +255,50 @@ public partial class MainViewModel : ViewModelBase
         IsBusy = true; Progress = 0;
         try
         {
+            var kind = SelectedContentKind == "Ресурспаки" ? ContentKind.ResourcePack : ContentKind.Mod;
             var prog = new Progress<double>(p => App.UiDispatch(() => Progress = p));
-            var path = await _mods.DownloadAsync(card, ContentKind.Mod, prog);
-            Status = $"Установлено: {System.IO.Path.GetFileName(path)}";
+            var path = await _mods.DownloadAsync(card, kind, prog);
+            Status = $"Установлено: {Path.GetFileName(path)}";
         }
         catch (Exception ex) { Status = $"Ошибка загрузки: {ex.Message}"; }
         finally { IsBusy = false; }
     }
 
-    // Смена темы
+    // ===== Настройки =====
+    [RelayCommand]
+    private void SaveSettings()
+    {
+        var c = _settings.Config;
+        c.RamMb = RamMb > 0 ? RamMb : 4096;
+        c.ScreenWidth = ScreenWidth;
+        c.ScreenHeight = ScreenHeight;
+        c.JvmArgs = JvmArgs ?? "";
+        c.JavaPath = JavaPath;
+        c.GameDirectory = string.IsNullOrWhiteSpace(GameDirectory) ? c.GameDirectory : GameDirectory;
+        c.MinimizeOnLaunch = MinimizeOnLaunch;
+        _settings.Save();
+        Status = "Настройки сохранены";
+    }
+
+    [RelayCommand]
+    private void PickJavaPath()
+    {
+        var dlg = new OpenFileDialog { Filter = "Java (java.exe;javaw.exe)|java.exe;javaw.exe", Title = "Выберите java" };
+        if (dlg.ShowDialog() == true) { JavaPath = dlg.FileName; SaveSettings(); }
+    }
+
+    [RelayCommand]
+    private void PickGameDir()
+    {
+        var dlg = new OpenFolderDialog { Title = "Выберите папку .minecraft" };
+        if (dlg.ShowDialog() == true) { GameDirectory = dlg.FolderName; SaveSettings(); }
+    }
+
+    // ===== Тема (с анимацией задаётся из code-behind) =====
     [RelayCommand]
     private void ChangeTheme(string theme)
     {
-        try
-        {
-            ThemeManager.Apply(theme);
-            _settings.Config.Theme = theme;
-            _settings.Save();
-        }
-        catch (Exception ex) { Status = $"Ошибка темы: {ex.Message}"; }
+        _settings.Config.Theme = theme;
+        _settings.Save();
     }
 }
