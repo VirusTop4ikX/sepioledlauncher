@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("GlassLauncher")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+278a9dcc33f75cc8fc268842914492270a46a52f")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ea037105f4b7f889d223c1508c915e862b97c8e3")]
 [assembly: System.Reflection.AssemblyProductAttribute("GlassLauncher")]
 [assembly: System.Reflection.AssemblyTitleAttribute("GlassLauncher")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
