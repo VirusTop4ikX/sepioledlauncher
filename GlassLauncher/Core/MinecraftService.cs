@@ -1,9 +1,10 @@
+using System.Net.Http;
+using System.Net.Http.Json;
 using CmlLib.Core;
 using CmlLib.Core.Auth;
 using CmlLib.Core.ProcessBuilder;
-using CmlLib.Core.Installers;          // FabricInstaller (входит в CmlLib.Core 4.x)
 using CmlLib.Core.Installer.Forge;     // ForgeInstaller (пакет CmlLib.Core.Installer.Forge 1.1.1)
-using GlassLauncher.Services;           // <-- FabricInstaller (пакет FabricMC)
+using GlassLauncher.Services;          // <-- FabricInstaller (пакет FabricMC)
 
 namespace GlassLauncher.Core;
 
@@ -52,9 +53,28 @@ public class MinecraftService
             }
             case LoaderType.Fabric:
             {
-                // FabricInstaller встроен в CmlLib.Core 4.x (CmlLib.Core.Installers)
-                var fabric = new FabricInstaller(new System.Net.Http.HttpClient());
-                versionToLaunch = await fabric.Install(profile.VersionId, _path);
+                // Узнаём последнюю стабильную версию fabric-loader через Fabric Meta API.
+                using var http = new HttpClient();
+                var loaders = await http.GetFromJsonAsync<List<FabricLoaderInfo>>(
+                    $"https://meta.fabricmc.net/v2/versions/loader/{profile.VersionId}", ct);
+                var loaderVer = loaders?.FirstOrDefault(l => l.loader.stable)?.loader.version
+                                ?? loaders?.FirstOrDefault()?.loader.version
+                                ?? throw new Exception("Не найден fabric-loader для этой версии");
+
+                // Скачиваем готовый профиль версии Fabric (.json) в versions/<id>/<id>.json
+                var versionName = $"fabric-loader-{loaderVer}-{profile.VersionId}";
+                var profileJsonUrl =
+                    $"https://meta.fabricmc.net/v2/versions/loader/{profile.VersionId}/{loaderVer}/profile/json";
+
+                var versionDir = System.IO.Path.Combine(_path.Versions, versionName);
+                System.IO.Directory.CreateDirectory(versionDir);
+                var json = await http.GetStringAsync(profileJsonUrl, ct);
+                await System.IO.File.WriteAllTextAsync(
+                    System.IO.Path.Combine(versionDir, versionName + ".json"), json, ct);
+
+                // InstallAsync догрузит библиотеки и базовый клиент.
+                await _launcher.InstallAsync(versionName, cancellationToken: ct);
+                versionToLaunch = versionName;
                 break;
             }
             default: // Vanilla
@@ -75,5 +95,15 @@ public class MinecraftService
 
         process.Start();
         return process;
+    }
+    // DTO для Fabric Meta API
+    public class FabricLoaderInfo
+    {
+        public FabricLoaderVersion loader { get; set; } = new();
+    }
+    public class FabricLoaderVersion
+    {
+        public string version { get; set; } = "";
+        public bool stable { get; set; }
     }
 }
