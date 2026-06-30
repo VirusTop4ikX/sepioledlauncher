@@ -4,7 +4,7 @@ using CmlLib.Core;
 using CmlLib.Core.Auth;
 using CmlLib.Core.ProcessBuilder;
 using CmlLib.Core.Installer.Forge;     // ForgeInstaller (пакет CmlLib.Core.Installer.Forge 1.1.1)
-using GlassLauncher.Services;          // <-- FabricInstaller (пакет FabricMC)
+using GlassLauncher.Services;
 
 namespace GlassLauncher.Core;
 
@@ -14,7 +14,7 @@ public class MinecraftService
 {
     private readonly MinecraftLauncher _launcher;
     private readonly MinecraftPath _path;
-    private static readonly System.Net.Http.HttpClient _httpClient = new();
+    private static readonly HttpClient _httpClient = new();
 
     public event Action<string, int, int>? FileProgress;
     public event Action<long, long>? ByteProgress;
@@ -30,10 +30,25 @@ public class MinecraftService
             ByteProgress?.Invoke(a.ProgressedBytes, a.TotalBytes);
     }
 
-    public async Task<IEnumerable<string>> GetVersionsAsync()
+    // Версии: релизы (новые сверху). includeSnapshots добавляет снапшоты ниже.
+    public async Task<List<string>> GetVersionsAsync(bool includeSnapshots = false)
     {
         var versions = await _launcher.GetAllVersionsAsync();
-        return versions.Select(v => v.Name);
+
+        var releases = versions
+            .Where(v => string.Equals(v.Type, "release", StringComparison.OrdinalIgnoreCase))
+            .Select(v => v.Name)
+            .ToList();
+
+        if (!includeSnapshots)
+            return releases;
+
+        var snapshots = versions
+            .Where(v => !string.Equals(v.Type, "release", StringComparison.OrdinalIgnoreCase))
+            .Select(v => v.Name)
+            .ToList();
+
+        return releases.Concat(snapshots).ToList();
     }
 
     public async Task<System.Diagnostics.Process> LaunchAsync(
@@ -45,9 +60,7 @@ public class MinecraftService
         {
             case LoaderType.Forge:
             {
-                // Пакет CmlLib.Core.Installer.Forge 1.1.1
                 var forge = new ForgeInstaller(_launcher);
-                // Возвращает имя установленной версии, например "1.20.1-forge-47.2.0"
                 versionToLaunch = await forge.Install(profile.VersionId);
                 break;
             }
@@ -61,7 +74,6 @@ public class MinecraftService
                                 ?? loaders?.FirstOrDefault()?.loader.version
                                 ?? throw new Exception("Не найден fabric-loader для этой версии");
 
-                // Скачиваем готовый профиль версии Fabric (.json) в versions/<id>/<id>.json
                 var versionName = $"fabric-loader-{loaderVer}-{profile.VersionId}";
                 var profileJsonUrl =
                     $"https://meta.fabricmc.net/v2/versions/loader/{profile.VersionId}/{loaderVer}/profile/json";
@@ -72,7 +84,6 @@ public class MinecraftService
                 await System.IO.File.WriteAllTextAsync(
                     System.IO.Path.Combine(versionDir, versionName + ".json"), json, ct);
 
-                // InstallAsync догрузит библиотеки и базовый клиент.
                 await _launcher.InstallAsync(versionName, cancellationToken: ct);
                 versionToLaunch = versionName;
                 break;
@@ -85,7 +96,10 @@ public class MinecraftService
             }
         }
 
-        var session = new MSession(account.Username, account.AccessToken, account.Uuid);
+        // Пустой токен -> offline-сессия (вход по нику); иначе сессия Ely.by.
+        MSession session = string.IsNullOrEmpty(account.AccessToken)
+            ? MSession.CreateOfflineSession(account.Username)
+            : new MSession(account.Username, account.AccessToken, account.Uuid);
 
         var process = await _launcher.BuildProcessAsync(versionToLaunch, new MLaunchOption
         {
@@ -96,6 +110,7 @@ public class MinecraftService
         process.Start();
         return process;
     }
+
     // DTO для Fabric Meta API
     public class FabricLoaderInfo
     {

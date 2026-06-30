@@ -1,3 +1,4 @@
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using GlassLauncher.ViewModels;
@@ -12,10 +13,14 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = _vm = vm;
-        Loaded += async (_, _) => await _vm.InitCommand.ExecuteAsync(null);
+
+        Loaded += async (_, _) =>
+        {
+            try { await _vm.InitCommand.ExecuteAsync(null); }
+            catch (Exception ex) { MessageBox.Show(ex.ToString(), "Ошибка инициализации"); }
+        };
     }
 
-    // Смена темы из ComboBox
     private void ThemeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (sender is ComboBox cb && cb.SelectedItem is string theme)

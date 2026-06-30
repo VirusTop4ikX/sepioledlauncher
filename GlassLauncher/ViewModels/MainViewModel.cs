@@ -26,10 +26,12 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private double _progress;
     [ObservableProperty] private string _status = "Готов к запуску";
+    [ObservableProperty] private bool _includeSnapshots;
+    [ObservableProperty] private string _offlineUsername = "Player";
 
     public ObservableCollection<string> Versions { get; } = new();
     public ObservableCollection<ModCard> Mods { get; } = new();
-    public ObservableCollection<string> Themes { get; } = new() { "Dark", "Light", "Neon" };
+    public ObservableCollection<string> Themes { get; } = new() { "Dark", "Light" };
 
     private ElyAccount? _account;
 
@@ -38,36 +40,21 @@ public partial class MainViewModel : ViewModelBase
     {
         _settings = settings; _mc = mc; _auth = auth; _mods = mods; _sp = sp;
 
-        // Прогресс из сервиса -> UI (через диспетчер)
         _mc.FileProgress += (name, done, total) =>
             App.UiDispatch(() => { Status = $"Загрузка: {name}"; });
         _mc.ByteProgress += (done, total) =>
             App.UiDispatch(() => { if (total > 0) Progress = (double)done / total * 100; });
 
-        // Берём версию из активного профиля (с защитой от пустого конфига)
         try { SelectedVersion = _settings.GetActiveProfile().VersionId; }
         catch { SelectedVersion = null; }
     }
 
-    // Загрузка списка версий при старте — каждый этап изолирован.
+    // Старт: загрузка версий + авто-логин
     [RelayCommand]
     private async Task InitAsync()
     {
-        // 1) Список версий
-        try
-        {
-            var versions = await _mc.GetVersionsAsync();
-            foreach (var v in versions.Take(200)) Versions.Add(v);
-            if (string.IsNullOrEmpty(SelectedVersion))
-                SelectedVersion = Versions.FirstOrDefault();
-            Status = $"Загружено версий: {Versions.Count}";
-        }
-        catch (Exception ex)
-        {
-            Status = $"Не удалось загрузить версии: {ex.Message}";
-        }
+        await ReloadVersionsAsync();
 
-        // 2) Авто-логин (не критично)
         if (!string.IsNullOrEmpty(_settings.Config.ElyRefreshToken))
         {
             try
@@ -75,14 +62,30 @@ public partial class MainViewModel : ViewModelBase
                 _account = await _auth.RefreshAsync(_settings.Config.ElyRefreshToken);
                 ApplyAccount(_account);
             }
-            catch
-            {
-                Status = "Сессия Ely.by истекла — войдите заново";
-            }
+            catch { Status = "Сессия Ely.by истекла — войдите заново"; }
         }
     }
 
-    // Вход через Ely.by (открывает WebView2)
+    // Перезагрузка списка версий
+    [RelayCommand]
+    private async Task ReloadVersionsAsync()
+    {
+        try
+        {
+            Versions.Clear();
+            var versions = await _mc.GetVersionsAsync(IncludeSnapshots);
+            foreach (var v in versions) Versions.Add(v);
+            if (string.IsNullOrEmpty(SelectedVersion) || !Versions.Contains(SelectedVersion))
+                SelectedVersion = Versions.FirstOrDefault();
+            Status = $"Версий: {Versions.Count}";
+        }
+        catch (Exception ex) { Status = $"Не удалось загрузить версии: {ex.Message}"; }
+    }
+
+    // Авто-перезагрузка при смене флажка снапшотов
+    partial void OnIncludeSnapshotsChanged(bool value) => _ = ReloadVersionsAsync();
+
+    // Вход через Ely.by (WebView2)
     [RelayCommand]
     private void Login()
     {
@@ -107,6 +110,29 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
+    // Вход по нику (offline)
+    [RelayCommand]
+    private void LoginOffline()
+    {
+        var name = (OfflineUsername ?? "").Trim();
+        if (name.Length < 3) { Status = "Ник должен быть не короче 3 символов"; return; }
+
+        _account = new ElyAccount
+        {
+            Username = name,
+            AccessToken = "",
+            Uuid = "",
+            SkinUrl = $"https://mc-heads.net/avatar/{name}/96"
+        };
+        ApplyAccount(_account);
+
+        _settings.Config.Username = name;
+        _settings.Config.ElyAccessToken = null;
+        _settings.Config.ElyRefreshToken = null;
+        _settings.Save();
+        Status = $"Оффлайн-вход: {name}";
+    }
+
     private void ApplyAccount(ElyAccount acc)
     {
         Username = acc.Username;
@@ -118,7 +144,7 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private async Task PlayAsync()
     {
-        if (_account == null) { Status = "Сначала выполните вход через Ely.by"; return; }
+        if (_account == null) { Status = "Сначала выполните вход"; return; }
         if (string.IsNullOrEmpty(SelectedVersion)) { Status = "Выберите версию"; return; }
 
         IsBusy = true; Progress = 0;
@@ -168,7 +194,7 @@ public partial class MainViewModel : ViewModelBase
         finally { IsBusy = false; }
     }
 
-    // Смена темы — мгновенно с анимацией
+    // Смена темы
     [RelayCommand]
     private void ChangeTheme(string theme)
     {
