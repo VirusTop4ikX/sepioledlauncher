@@ -9,11 +9,13 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="CmlLib.Core" Version="4.0.6" />
-    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2792.45" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.0" />
-    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
-  </ItemGroup>
+<ItemGroup>
+  <PackageReference Include="CmlLib.Core" Version="4.0.6" />
+  <PackageReference Include="CmlLib.Core.Installer.Forge" Version="3.0.1" />
+  <PackageReference Include="CmlLib.Core.Installer.FabricMC" Version="1.0.0" />
+  <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2792.45" />
+  <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
+  <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.0" />
+  <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+</ItemGroup>
 </Project>
