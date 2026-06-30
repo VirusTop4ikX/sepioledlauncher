@@ -1,4 +1,7 @@
+using System;
 using System.Collections.ObjectModel;
+using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -41,21 +44,30 @@ public partial class MainViewModel : ViewModelBase
         _mc.ByteProgress += (done, total) =>
             App.UiDispatch(() => { if (total > 0) Progress = (double)done / total * 100; });
 
-        SelectedVersion = _settings.GetActiveProfile().VersionId;
+        // Берём версию из активного профиля (с защитой от пустого конфига)
+        try { SelectedVersion = _settings.GetActiveProfile().VersionId; }
+        catch { SelectedVersion = null; }
     }
 
-    // Загрузка списка версий при старте
+    // Загрузка списка версий при старте — каждый этап изолирован.
     [RelayCommand]
     private async Task InitAsync()
     {
+        // 1) Список версий
         try
         {
             var versions = await _mc.GetVersionsAsync();
             foreach (var v in versions.Take(200)) Versions.Add(v);
+            if (string.IsNullOrEmpty(SelectedVersion))
+                SelectedVersion = Versions.FirstOrDefault();
+            Status = $"Загружено версий: {Versions.Count}";
         }
-        catch (Exception ex) { Status = $"Ошибка версий: {ex.Message}"; }
+        catch (Exception ex)
+        {
+            Status = $"Не удалось загрузить версии: {ex.Message}";
+        }
 
-        // Авто-логин по сохранённому refresh-токену
+        // 2) Авто-логин (не критично)
         if (!string.IsNullOrEmpty(_settings.Config.ElyRefreshToken))
         {
             try
@@ -63,7 +75,10 @@ public partial class MainViewModel : ViewModelBase
                 _account = await _auth.RefreshAsync(_settings.Config.ElyRefreshToken);
                 ApplyAccount(_account);
             }
-            catch { /* токен протух — потребуется ручной вход */ }
+            catch
+            {
+                Status = "Сессия Ely.by истекла — войдите заново";
+            }
         }
     }
 
@@ -71,16 +86,24 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void Login()
     {
-        var win = new AuthWindow(_auth) { Owner = Application.Current.MainWindow };
-        if (win.ShowDialog() == true && win.Account != null)
+        try
         {
-            _account = win.Account;
-            ApplyAccount(_account);
-            _settings.Config.ElyAccessToken = _account.AccessToken;
-            _settings.Config.ElyRefreshToken = _account.RefreshToken;
-            _settings.Config.Username = _account.Username;
-            _settings.Config.Uuid = _account.Uuid;
-            _settings.Save();
+            var win = new AuthWindow(_auth) { Owner = Application.Current.MainWindow };
+            if (win.ShowDialog() == true && win.Account != null)
+            {
+                _account = win.Account;
+                ApplyAccount(_account);
+                _settings.Config.ElyAccessToken = _account.AccessToken;
+                _settings.Config.ElyRefreshToken = _account.RefreshToken;
+                _settings.Config.Username = _account.Username;
+                _settings.Config.Uuid = _account.Uuid;
+                _settings.Save();
+            }
+        }
+        catch (Exception ex)
+        {
+            Status = $"Ошибка входа: {ex.Message}";
+            MessageBox.Show(ex.ToString(), "Ошибка входа Ely.by");
         }
     }
 
@@ -149,8 +172,12 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void ChangeTheme(string theme)
     {
-        ThemeManager.Apply(theme);
-        _settings.Config.Theme = theme;
-        _settings.Save();
+        try
+        {
+            ThemeManager.Apply(theme);
+            _settings.Config.Theme = theme;
+            _settings.Save();
+        }
+        catch (Exception ex) { Status = $"Ошибка темы: {ex.Message}"; }
     }
 }
