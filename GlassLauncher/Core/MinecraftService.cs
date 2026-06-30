@@ -1,10 +1,9 @@
 using CmlLib.Core;
 using CmlLib.Core.Auth;
 using CmlLib.Core.ProcessBuilder;
-using CmlLib.Core.Installers;          // <-- ForgeInstaller, ServerInstaller (4.x)
-using CmlLib.Core.Installer.Forge;     // <-- неймспейс пакета Forge installer 3.x
-using CmlLib.Core.FabricMC;            // <-- FabricInstaller (пакет FabricMC)
-using GlassLauncher.Services;
+using CmlLib.Core.Installers;          // FabricInstaller (входит в CmlLib.Core 4.x)
+using CmlLib.Core.Installer.Forge;     // ForgeInstaller (пакет CmlLib.Core.Installer.Forge 1.1.1)
+using GlassLauncher.Services;           // <-- FabricInstaller (пакет FabricMC)
 
 namespace GlassLauncher.Core;
 
@@ -45,19 +44,16 @@ public class MinecraftService
         {
             case LoaderType.Forge:
             {
-                // В 4.x установщик Forge берёт launcher + HttpClient.
+                // Пакет CmlLib.Core.Installer.Forge 1.1.1
                 var forge = new ForgeInstaller(_launcher);
-                // Вернёт имя установленной версии (например "1.20.1-forge-47.2.0")
-                versionToLaunch = await forge.Install(profile.VersionId, new ForgeInstallOptions
-                {
-                    SkipIfAlreadyInstalled = true
-                });
+                // Возвращает имя установленной версии, например "1.20.1-forge-47.2.0"
+                versionToLaunch = await forge.Install(profile.VersionId);
                 break;
             }
             case LoaderType.Fabric:
             {
-                // FabricInstaller создаётся с HttpClient, ставит в указанный path.
-                var fabric = new FabricInstaller(_httpClient);
+                // FabricInstaller встроен в CmlLib.Core 4.x (CmlLib.Core.Installers)
+                var fabric = new FabricInstaller(new System.Net.Http.HttpClient());
                 versionToLaunch = await fabric.Install(profile.VersionId, _path);
                 break;
             }
