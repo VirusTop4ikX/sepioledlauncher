@@ -1,23 +1,23 @@
 using CmlLib.Core;
 using CmlLib.Core.Auth;
 using CmlLib.Core.ProcessBuilder;
-using CmlLib.Core.Installer.Forge;
-using CmlLib.Core.Installer.FabricMC;
-using GlassLauncher.Core;
+using CmlLib.Core.Installers;          // <-- ForgeInstaller, ServerInstaller (4.x)
+using CmlLib.Core.Installer.Forge;     // <-- неймспейс пакета Forge installer 3.x
+using CmlLib.Core.FabricMC;            // <-- FabricInstaller (пакет FabricMC)
 using GlassLauncher.Services;
 
 namespace GlassLauncher.Core;
 
-// Обёртка над CmlLib.Core 4.x: список версий, установка (с Forge/Fabric),
-// поиск/скачивание Java выполняет сама библиотека, и запуск процесса игры.
+// Обёртка над CmlLib.Core 4.x: версии, установка (Forge/Fabric), запуск.
+// Java библиотека ставит сама при необходимости.
 public class MinecraftService
 {
     private readonly MinecraftLauncher _launcher;
     private readonly MinecraftPath _path;
+    private static readonly System.Net.Http.HttpClient _httpClient = new();
 
-    // События прогресса для UI
-    public event Action<string, int, int>? FileProgress; // имя, сделано, всего
-    public event Action<long, long>? ByteProgress;       // байт сделано / всего
+    public event Action<string, int, int>? FileProgress;
+    public event Action<long, long>? ByteProgress;
 
     public MinecraftService(SettingsService settings)
     {
@@ -30,49 +30,51 @@ public class MinecraftService
             ByteProgress?.Invoke(a.ProgressedBytes, a.TotalBytes);
     }
 
-    // Список всех доступных версий Minecraft (для выпадающего списка).
     public async Task<IEnumerable<string>> GetVersionsAsync()
     {
         var versions = await _launcher.GetAllVersionsAsync();
         return versions.Select(v => v.Name);
     }
 
-    // Установка + запуск выбранного профиля.
-    // Для Forge/Fabric сначала устанавливаем загрузчик, затем запускаем его версию.
     public async Task<System.Diagnostics.Process> LaunchAsync(
         LauncherProfile profile, ElyAccount account, CancellationToken ct = default)
     {
-        string versionToLaunch = profile.VersionId;
+        string versionToLaunch;
 
         switch (profile.Loader)
         {
             case LoaderType.Forge:
+            {
+                // В 4.x установщик Forge берёт launcher + HttpClient.
                 var forge = new ForgeInstaller(_launcher);
-                versionToLaunch = await forge.Install(profile.VersionId, cancellationToken: ct);
+                // Вернёт имя установленной версии (например "1.20.1-forge-47.2.0")
+                versionToLaunch = await forge.Install(profile.VersionId, new ForgeInstallOptions
+                {
+                    SkipIfAlreadyInstalled = true
+                });
                 break;
-
+            }
             case LoaderType.Fabric:
-                var fabric = new FabricInstaller(new System.Net.Http.HttpClient());
+            {
+                // FabricInstaller создаётся с HttpClient, ставит в указанный path.
+                var fabric = new FabricInstaller(_httpClient);
                 versionToLaunch = await fabric.Install(profile.VersionId, _path);
                 break;
-
-            case LoaderType.Vanilla:
-            default:
+            }
+            default: // Vanilla
+            {
                 await _launcher.InstallAsync(profile.VersionId, cancellationToken: ct);
+                versionToLaunch = profile.VersionId;
                 break;
+            }
         }
 
-        // Создаём игровую сессию из токена Ely.by.
-        // Ely.by совместим с протоколом Mojang yggdrasil через authlib-injector,
-        // поэтому достаточно передать username/uuid/accessToken.
         var session = new MSession(account.Username, account.AccessToken, account.Uuid);
 
         var process = await _launcher.BuildProcessAsync(versionToLaunch, new MLaunchOption
         {
             Session = session,
-            MaximumRamMb = profile.RamMb,
-            // authlib-injector аргумент можно добавить здесь при необходимости:
-            // ExtraJvmArguments = new[] { MArgument.FromCommandLine("-javaagent:authlib-injector.jar=ely.by") }
+            MaximumRamMb = profile.RamMb
         }, ct);
 
         process.Start();
